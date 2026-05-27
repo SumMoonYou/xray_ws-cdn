@@ -3,33 +3,41 @@
 # =========================================================
 # XRAY PRODUCTION INSTALL SCRIPT
 # 功能：
-# - 自动安装 Xray + Nginx
-# - VLESS + WebSocket + TLS
+# - Xray + Nginx 一键部署
+# - VLESS + WS + TLS
 # - 动态 WS Path（防扫描）
-# - 企业级 Nginx TLS 优化
-# - 伪装站点
-# - 自动节点输出
-# - 全系统兼容（Debian / Ubuntu / CentOS / Fedora / Rocky）
+# - 企业级 Nginx 优化
+# - 多系统兼容
+# - 安装 / 查看 / 修改 / 卸载
 # =========================================================
 
 set -e
 
-# =========================
-# 全局配置路径
-# =========================
+# =========================================================
+# 全局配置
+# =========================================================
 CONFIG_FILE="/usr/local/etc/xray/config.json"
 NGINX_FILE="/etc/nginx/conf.d/xray.conf"
 
 # =========================================================
-# UI：Logo 输出（纯终端界面）
+# Logo
 # =========================================================
 show_logo() {
 
 clear
 
 echo "=================================================="
-echo "        XRAY INSTALLATION PANEL"
-echo "        VLESS + WS + TLS DEPLOY TOOL"
+echo "                                                  "
+echo "        ██╗  ██╗██████╗  █████╗ ██╗   ██╗         "
+echo "        ╚██╗██╔╝██╔══██╗██╔══██╗╚██╗ ██╔╝         "
+echo "         ╚███╔╝ ██████╔╝███████║ ╚████╔╝          "
+echo "         ██╔██╗ ██╔══██╗██╔══██║  ╚██╔╝           "
+echo "        ██╔╝ ██╗██║  ██║██║  ██║   ██║            "
+echo "        ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝   ╚═╝            "
+echo "                                                  "
+echo "              XRAY INSTALL PANEL                  "
+echo "         VLESS + WS + TLS DEPLOY TOOL            "
+echo "                                                  "
 echo "=================================================="
 echo
 echo "System : $(uname -s) $(uname -m)"
@@ -40,10 +48,7 @@ echo
 }
 
 # =========================================================
-# 系统检测（核心兼容模块）
-# 作用：
-# - 自动识别 Linux 发行版
-# - 选择对应包管理器
+# 系统检测
 # =========================================================
 detect_os() {
 
@@ -51,103 +56,110 @@ if [ -f /etc/os-release ]; then
     . /etc/os-release
     OS=$ID
 else
-    echo "Cannot detect OS"
+    echo "无法识别系统"
     exit 1
 fi
 
 case "$OS" in
 
-# Debian / Ubuntu 系列
 ubuntu|debian)
-    PM="apt"
     INSTALL="apt install -y"
     UPDATE="apt update -y"
     ;;
 
-# CentOS / Rocky / AlmaLinux / RHEL
 centos|rocky|almalinux|rhel|ol)
-    PM="yum"
     command -v dnf >/dev/null && INSTALL="dnf install -y" || INSTALL="yum install -y"
     UPDATE="yum makecache || dnf makecache"
     ;;
 
-# Fedora 系列
 fedora)
-    PM="dnf"
     INSTALL="dnf install -y"
     UPDATE="dnf makecache"
     ;;
 
-# 不支持系统直接退出
 *)
-    echo "Unsupported OS: $OS"
+    echo "不支持当前系统: $OS"
     exit 1
     ;;
 esac
 }
 
 # =========================================================
-# 动态 WebSocket 路径生成（防扫描核心）
+# 生成动态 WS Path
 # =========================================================
 gen_ws_path() {
 
-# 随机生成 10~12 位路径
 WS_PATH="/$(head /dev/urandom | tr -dc a-z0-9 | head -c 12)"
 }
 
 # =========================================================
-# 依赖安装模块
+# 安装依赖
 # =========================================================
 install_deps() {
 
-echo "[+] Installing system dependencies..."
+echo
+echo "[+] 安装系统依赖..."
+echo
 
 $UPDATE
 
-# 安装基础依赖（失败不影响流程，做兼容处理）
-$INSTALL curl wget unzip nginx ca-certificates openssl || true
+$INSTALL curl wget unzip nginx openssl ca-certificates || true
 }
 
 # =========================================================
-# Xray 安装模块
+# 安装 Xray
 # =========================================================
 install_xray() {
 
-echo "[+] Installing Xray core..."
+echo
+echo "[+] 安装 Xray Core..."
+echo
 
-# 官方安装脚本（失败直接退出）
 if ! bash <(curl -Ls https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh); then
-    echo "[ERROR] Xray installation failed"
+    echo
+    echo "[ERROR] Xray 安装失败"
     exit 1
 fi
 }
 
 # =========================================================
-# TLS 证书输入模块（手动粘贴）
+# 输入 TLS
 # =========================================================
 tls_input() {
+
+echo "--------------------------------------------------"
+echo "请输入域名"
+echo "--------------------------------------------------"
 
 read -rp "Domain: " DOMAIN
 
 mkdir -p /etc/ssl/private
 
-echo "Paste CRT (Ctrl+D to finish):"
+echo
+echo "--------------------------------------------------"
+echo "粘贴 CRT 证书内容（结束按 Ctrl+D）"
+echo "--------------------------------------------------"
+
 cat > /etc/ssl/private/${DOMAIN}.crt
 
-echo "Paste KEY (Ctrl+D to finish):"
+echo
+echo "--------------------------------------------------"
+echo "粘贴 KEY 私钥内容（结束按 Ctrl+D）"
+echo "--------------------------------------------------"
+
 cat > /etc/ssl/private/${DOMAIN}.key
 
-# 保护私钥权限
 chmod 600 /etc/ssl/private/${DOMAIN}.key
 }
 
 # =========================================================
-# Xray 配置生成（核心代理配置）
+# 配置 Xray
 # =========================================================
 config_xray() {
 
-# 自动生成 UUID（客户端身份）
 UUID=$(cat /proc/sys/kernel/random/uuid)
+
+mkdir -p /usr/local/etc/xray
 
 cat > $CONFIG_FILE <<EOF
 {
@@ -180,6 +192,7 @@ cat > $CONFIG_FILE <<EOF
 
       "streamSettings": {
         "network": "ws",
+
         "wsSettings": {
           "path": "${WS_PATH}"
         }
@@ -215,50 +228,46 @@ EOF
 }
 
 # =========================================================
-# Nginx 配置（企业级优化）
+# 配置 Nginx
 # =========================================================
 config_nginx() {
 
-# 删除默认站点（避免冲突）
+mkdir -p /etc/nginx/conf.d
+
 rm -f /etc/nginx/sites-enabled/default
 
 cat > $NGINX_FILE <<EOF
 server {
 
-    # HTTP 强制跳转 HTTPS
     listen 80;
     server_name ${DOMAIN};
+
     return 301 https://\$host\$request_uri;
 }
 
 server {
 
-    # HTTPS + HTTP/2
     listen 443 ssl http2;
     server_name ${DOMAIN};
 
-    # TLS 证书
     ssl_certificate /etc/ssl/private/${DOMAIN}.crt;
     ssl_certificate_key /etc/ssl/private/${DOMAIN}.key;
 
-    # TLS 优化
     ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_prefer_server_ciphers off;
 
-    # SSL session 优化
     ssl_session_cache shared:SSL:50m;
     ssl_session_timeout 1d;
     ssl_session_tickets off;
 
-    # 证书验证加速
+    ssl_prefer_server_ciphers off;
+
     ssl_stapling on;
     ssl_stapling_verify on;
+
     resolver 1.1.1.1 8.8.8.8;
 
-    # 禁用压缩（WebSocket 推荐）
     gzip off;
 
-    # TCP 性能优化
     sendfile on;
     tcp_nopush on;
     tcp_nodelay on;
@@ -266,20 +275,14 @@ server {
     keepalive_timeout 60s;
     keepalive_requests 1000;
 
-    # 网站根目录（伪装站）
     root /var/www/html;
 
-    # ==============================
-    # WebSocket 转发（核心入口）
-    # ==============================
     location ${WS_PATH} {
 
-        # 防止非 WebSocket 请求
         if (\$http_upgrade != "websocket") {
             return 444;
         }
 
-        # 转发到 Xray
         proxy_pass http://127.0.0.1:17654;
 
         proxy_http_version 1.1;
@@ -289,13 +292,17 @@ server {
 
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
 
-        # 禁用缓冲（降低延迟）
         proxy_buffering off;
+        proxy_request_buffering off;
+
         proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+
+        proxy_connect_timeout 10s;
     }
 
-    # 伪装站点
     location / {
         try_files \$uri \$uri/ =404;
     }
@@ -304,7 +311,7 @@ EOF
 }
 
 # =========================================================
-# 伪装网站（降低特征识别）
+# 创建伪装站
 # =========================================================
 fake_site() {
 
@@ -318,99 +325,321 @@ cat > /var/www/html/index.html <<EOF
 <title>Service</title>
 
 <style>
-body {
-    font-family: Arial;
-    text-align: center;
-    padding-top: 80px;
-    background: #f4f4f4;
+body{
+    font-family:Arial;
+    background:#f4f4f4;
+    text-align:center;
+    padding-top:80px;
 }
 
-.box {
-    background: white;
-    padding: 40px;
-    width: 60%;
-    margin: auto;
-    border-radius: 10px;
+.box{
+    background:white;
+    width:60%;
+    margin:auto;
+    padding:40px;
+    border-radius:10px;
+    box-shadow:0 0 10px rgba(0,0,0,.1);
 }
 </style>
-
 </head>
 
 <body>
+
 <div class="box">
 <h1>Service Running</h1>
 <p>System is operating normally</p>
 </div>
+
 </body>
 </html>
 EOF
 }
 
 # =========================================================
-# 服务启动与健康检查
+# 启动服务
 # =========================================================
 start_services() {
 
-systemctl enable nginx xray
+echo
+echo "[+] 启动服务..."
+echo
+
+systemctl enable nginx xray >/dev/null 2>&1
 systemctl restart nginx xray
 
-# 检查 nginx 是否启动成功
 systemctl is-active --quiet nginx || {
-    echo "[ERROR] Nginx failed to start"
+    echo
+    echo "[ERROR] Nginx 启动失败"
     exit 1
 }
 
-# 检查 xray 是否启动成功
 systemctl is-active --quiet xray || {
-    echo "[ERROR] Xray failed to start"
+    echo
+    echo "[ERROR] Xray 启动失败"
     exit 1
 }
 }
 
 # =========================================================
-# 输出节点信息
+# 安装
+# =========================================================
+install() {
+
+show_logo
+
+detect_os
+
+tls_input
+
+gen_ws_path
+
+install_deps
+
+install_xray
+
+config_xray
+
+config_nginx
+
+fake_site
+
+start_services
+
+show_result
+}
+
+# =========================================================
+# 查看节点
+# =========================================================
+show_node() {
+
+DOMAIN=$(grep server_name $NGINX_FILE | head -n1 | awk '{print $2}' | sed 's/;//')
+
+UUID=$(grep '"id"' $CONFIG_FILE | head -n1 | cut -d '"' -f4)
+
+PATHX=$(grep -oP 'location \K/[a-z0-9]+' $NGINX_FILE | head -n1)
+
+clear
+
+echo "=================================================="
+echo "                   节点信息"
+echo "=================================================="
+echo
+echo "域名:"
+echo "  $DOMAIN"
+echo
+echo "UUID:"
+echo "  $UUID"
+echo
+echo "WS Path:"
+echo "  $PATHX"
+echo
+echo "--------------------------------------------------"
+echo "节点链接"
+echo "--------------------------------------------------"
+echo
+
+echo "vless://${UUID}@${DOMAIN}:443?encryption=none&security=tls&type=ws&host=${DOMAIN}&path=${PATHX}#${DOMAIN}"
+
+echo
+echo "=================================================="
+echo
+
+read -n 1 -s -r -p "按任意键返回菜单..."
+menu
+}
+
+# =========================================================
+# 修改配置
+# =========================================================
+modify_config() {
+
+clear
+
+echo "=================================================="
+echo "                 修改节点配置"
+echo "=================================================="
+echo
+echo "  [1] 重新生成 UUID"
+echo "  [2] 重新生成 WS Path"
+echo "  [3] 返回主菜单"
+echo
+echo "=================================================="
+
+read -rp "请选择: " m
+
+case $m in
+
+1)
+
+NEW_UUID=$(cat /proc/sys/kernel/random/uuid)
+
+sed -i "s/\"id\": \".*\"/\"id\": \"${NEW_UUID}\"/" $CONFIG_FILE
+
+systemctl restart xray
+
+echo
+echo "新的 UUID:"
+echo
+echo "$NEW_UUID"
+echo
+;;
+
+2)
+
+NEW_PATH="/$(head /dev/urandom | tr -dc a-z0-9 | head -c 12)"
+
+sed -i "s|\"path\": \".*\"|\"path\": \"${NEW_PATH}\"|" $CONFIG_FILE
+
+sed -i "s|location /.* {|location ${NEW_PATH} {|" $NGINX_FILE
+
+systemctl restart nginx
+systemctl restart xray
+
+echo
+echo "新的 WS Path:"
+echo
+echo "$NEW_PATH"
+echo
+;;
+
+3)
+menu
+;;
+
+*)
+echo "输入错误"
+;;
+
+esac
+
+read -n 1 -s -r -p "按任意键返回菜单..."
+menu
+}
+
+# =========================================================
+# 卸载
+# =========================================================
+uninstall() {
+
+clear
+
+echo "=================================================="
+echo "                   卸载环境"
+echo "=================================================="
+echo
+
+read -rp "确认卸载？[y/N]: " confirm
+
+[[ ! "$confirm" =~ ^[Yy]$ ]] && menu
+
+systemctl stop nginx xray >/dev/null 2>&1 || true
+systemctl disable nginx xray >/dev/null 2>&1 || true
+
+bash <(curl -Ls https://raw.githubusercontent.com/XTLS/Xray-install/main/install-release.sh) remove || true
+
+rm -rf /usr/local/etc/xray
+rm -rf /usr/local/share/xray
+rm -rf /var/log/xray
+
+rm -f $NGINX_FILE
+
+echo
+echo "卸载完成"
+echo
+
+read -n 1 -s -r -p "按任意键返回菜单..."
+menu
+}
+
+# =========================================================
+# 安装结果
 # =========================================================
 show_result() {
 
 clear
 
 echo "=================================================="
-echo "           INSTALLATION COMPLETED"
+echo "                安装完成"
 echo "=================================================="
 echo
-echo "DOMAIN : $DOMAIN"
-echo "UUID   : $UUID"
-echo "PATH   : $WS_PATH"
+
+echo "域名:"
+echo "  ${DOMAIN}"
 echo
+
+echo "UUID:"
+echo "  ${UUID}"
+echo
+
+echo "WS Path:"
+echo "  ${WS_PATH}"
+echo
+
 echo "--------------------------------------------------"
-echo "NODE LINK"
+echo "节点链接"
 echo "--------------------------------------------------"
 echo
+
 echo "vless://${UUID}@${DOMAIN}:443?encryption=none&security=tls&type=ws&host=${DOMAIN}&path=${WS_PATH}#${DOMAIN}"
+
 echo
 echo "=================================================="
+echo "状态: Xray + Nginx 运行正常"
+echo "=================================================="
+echo
+
+read -n 1 -s -r -p "按任意键返回菜单..."
+menu
 }
 
 # =========================================================
-# 主流程
+# 主菜单
 # =========================================================
-main() {
+menu() {
 
-show_logo          # 显示安装界面
-detect_os          # 系统检测
-tls_input          # 输入域名 + 证书
-gen_ws_path        # 生成动态 WS 路径
+show_logo
 
-install_deps       # 安装依赖
-install_xray       # 安装 Xray
+echo "=================================================="
+echo "                    主菜单"
+echo "=================================================="
+echo
+echo "  [1] 安装 Xray + Nginx"
+echo "  [2] 查看节点信息"
+echo "  [3] 修改节点配置"
+echo "  [4] 卸载环境"
+echo "  [0] 退出脚本"
+echo
+echo "=================================================="
 
-config_xray        # 写入 Xray 配置
-config_nginx       # 写入 Nginx 配置
-fake_site          # 创建伪装网站
+read -rp "请输入选项: " opt
 
-start_services     # 启动服务
-
-show_result        # 输出节点信息
+case $opt in
+    1)
+        install
+        ;;
+    2)
+        show_node
+        ;;
+    3)
+        modify_config
+        ;;
+    4)
+        uninstall
+        ;;
+    0)
+        exit 0
+        ;;
+    *)
+        echo
+        echo "输入错误"
+        sleep 1
+        menu
+        ;;
+esac
 }
 
-main
+# =========================================================
+# 启动菜单
+# =========================================================
+menu
