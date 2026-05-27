@@ -5,7 +5,6 @@
 - VLESS + WS + TLS
 - 随机 WebSocket Path（防扫描）
 - 自动伪装站点
-- 美化 SSH 安装界面
 - UUID 一键修改
 - Debian / Ubuntu / CentOS 兼容
 
