@@ -2,20 +2,12 @@
 
 # =========================================================
 # XRAY PRODUCTION INSTALL SCRIPT
-# 功能：
-# - Xray + Nginx 一键部署
-# - VLESS + WS + TLS
-# - 动态 WS Path（防扫描）
-# - 企业级 Nginx 优化
-# - 多系统兼容
-# - 安装 / 查看 / 修改 / 卸载
+# VLESS + WS + TLS
+# 多系统兼容 + 动态 WS + Nginx 企业级优化
 # =========================================================
 
 set -e
 
-# =========================================================
-# 全局配置
-# =========================================================
 CONFIG_FILE="/usr/local/etc/xray/config.json"
 NGINX_FILE="/etc/nginx/conf.d/xray.conf"
 
@@ -251,7 +243,9 @@ server {
 
 server {
 
-    listen 443 ssl http2;
+    listen 443 ssl;
+    http2 on;
+
     server_name ${DOMAIN};
 
     ssl_certificate /etc/ssl/private/${DOMAIN}.crt;
@@ -264,9 +258,6 @@ server {
     ssl_session_tickets off;
 
     ssl_prefer_server_ciphers off;
-
-    ssl_stapling on;
-    ssl_stapling_verify on;
 
     resolver 1.1.1.1 8.8.8.8;
 
@@ -375,15 +366,22 @@ systemctl enable nginx xray >/dev/null 2>&1
 systemctl restart nginx xray
 
 systemctl is-active --quiet nginx || {
+
     echo
     echo "[ERROR] Nginx 启动失败"
+    echo
+
     nginx -t
+
     exit 1
 }
 
 systemctl is-active --quiet xray || {
+
     echo
     echo "[ERROR] Xray 启动失败"
+    echo
+
     exit 1
 }
 }
@@ -425,7 +423,7 @@ DOMAIN=$(grep server_name $NGINX_FILE | head -n1 | awk '{print $2}' | sed 's/;//
 
 UUID=$(grep '"id"' $CONFIG_FILE | head -n1 | cut -d '"' -f4)
 
-PATHX=$(grep -oP 'location \K/[a-z0-9]+' $NGINX_FILE | head -n1)
+PATHX=$(grep -oP 'location \K/[a-z0-9]{10,}' $NGINX_FILE | head -n1)
 
 clear
 
@@ -497,24 +495,20 @@ echo
 
 NEW_PATH="/$(head /dev/urandom | tr -dc a-z0-9 | head -c 12)"
 
-# 获取旧 PATH
-OLD_PATH=$(grep -oP 'location \K/[a-z0-9]+' $NGINX_FILE | head -n1)
+OLD_PATH=$(grep -oP 'location \K/[a-z0-9]{10,}' $NGINX_FILE | head -n1)
 
-# 修改 Xray 配置
 sed -i "s|\"path\": \".*\"|\"path\": \"${NEW_PATH}\"|" $CONFIG_FILE
 
-# 精准替换 Nginx WS 路径
 sed -i "s|location ${OLD_PATH} {|location ${NEW_PATH} {|" $NGINX_FILE
 
-# 检测 Nginx 配置
 if ! nginx -t; then
 
     echo
     echo "[ERROR] Nginx 配置错误"
     echo
 
-    # 回滚
     sed -i "s|\"path\": \"${NEW_PATH}\"|\"path\": \"${OLD_PATH}\"|" $CONFIG_FILE
+
     sed -i "s|location ${NEW_PATH} {|location ${OLD_PATH} {|" $NGINX_FILE
 
     exit 1
@@ -666,7 +660,4 @@ case $opt in
 esac
 }
 
-# =========================================================
-# 启动菜单
-# =========================================================
 menu
