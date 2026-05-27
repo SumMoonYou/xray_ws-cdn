@@ -169,8 +169,8 @@ cat > $CONFIG_FILE <<EOF
 
   "dns": {
     "servers": [
-      "1.1.1.1",
-      "8.8.8.8",
+      "https+local://1.1.1.1/dns-query",
+      "https+local://8.8.8.8/dns-query",
       "localhost"
     ]
   },
@@ -194,7 +194,8 @@ cat > $CONFIG_FILE <<EOF
         "network": "ws",
 
         "wsSettings": {
-          "path": "${WS_PATH}"
+          "path": "${WS_PATH}",
+          "maxConcurrentStreams": 128
         }
       },
 
@@ -203,7 +204,8 @@ cat > $CONFIG_FILE <<EOF
         "routeOnly": true,
         "destOverride": [
           "http",
-          "tls"
+          "tls",
+          "quic"
         ]
       },
 
@@ -217,10 +219,12 @@ cat > $CONFIG_FILE <<EOF
 
   "outbounds": [
     {
-      "protocol": "freedom"
+      "protocol": "freedom",
+      "tag": "direct"
     },
     {
-      "protocol": "blackhole"
+      "protocol": "blackhole",
+      "tag": "block"
     }
   ]
 }
@@ -293,6 +297,7 @@ server {
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
 
         proxy_buffering off;
         proxy_request_buffering off;
@@ -301,6 +306,8 @@ server {
         proxy_send_timeout 3600s;
 
         proxy_connect_timeout 10s;
+
+        proxy_ssl_session_reuse on;
     }
 
     location / {
@@ -370,6 +377,7 @@ systemctl restart nginx xray
 systemctl is-active --quiet nginx || {
     echo
     echo "[ERROR] Nginx 启动失败"
+    nginx -t
     exit 1
 }
 
@@ -489,9 +497,28 @@ echo
 
 NEW_PATH="/$(head /dev/urandom | tr -dc a-z0-9 | head -c 12)"
 
+# 获取旧 PATH
+OLD_PATH=$(grep -oP 'location \K/[a-z0-9]+' $NGINX_FILE | head -n1)
+
+# 修改 Xray 配置
 sed -i "s|\"path\": \".*\"|\"path\": \"${NEW_PATH}\"|" $CONFIG_FILE
 
-sed -i "s|location /.* {|location ${NEW_PATH} {|" $NGINX_FILE
+# 精准替换 Nginx WS 路径
+sed -i "s|location ${OLD_PATH} {|location ${NEW_PATH} {|" $NGINX_FILE
+
+# 检测 Nginx 配置
+if ! nginx -t; then
+
+    echo
+    echo "[ERROR] Nginx 配置错误"
+    echo
+
+    # 回滚
+    sed -i "s|\"path\": \"${NEW_PATH}\"|\"path\": \"${OLD_PATH}\"|" $CONFIG_FILE
+    sed -i "s|location ${NEW_PATH} {|location ${OLD_PATH} {|" $NGINX_FILE
+
+    exit 1
+fi
 
 systemctl restart nginx
 systemctl restart xray
