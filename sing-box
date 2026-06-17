@@ -16,36 +16,60 @@ fi
 
 mkdir -p "$CERT_DIR" "$BACKUP_DIR"
 
+# ==============================
+# 🎨 UI 菜单
+# ==============================
 clear
 
-echo "======================================="
-echo "🚀 Sing-box 管理脚本（稳定增强版）"
-echo "WS + TLS + VLESS"
-echo "======================================="
-echo "1) 安装"
-echo "2) 查看配置"
-echo "3) 修改配置"
-echo "4) 卸载"
-echo "5) 重启"
-echo "0) 退出"
+GREEN="\033[32m"
+BLUE="\033[36m"
+YELLOW="\033[33m"
+RED="\033[31m"
+PURPLE="\033[35m"
+BOLD="\033[1m"
+RESET="\033[0m"
+
+echo -e "${BLUE}${BOLD}"
+echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
+echo "┃        🚀 Sing-box 管理面板         ┃"
+echo "┃     WS + TLS + VLESS + CF MODE      ┃"
+echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
+echo -e "${RESET}"
+
+echo -e "${GREEN}📌 功能菜单：${RESET}"
+echo "──────────────────────────────────────"
+echo -e "  ${YELLOW}1)${RESET} 📦 安装 sing-box"
+echo -e "  ${YELLOW}2)${RESET} 📄 查看配置"
+echo -e "  ${YELLOW}3)${RESET} ⚙️ 修改配置"
+echo -e "  ${YELLOW}4)${RESET} 🗑️ 卸载"
+echo -e "  ${YELLOW}5)${RESET} 🔄 重启服务"
+echo -e "  ${YELLOW}0)${RESET} 🚪 退出"
+echo "──────────────────────────────────────"
+
+echo -e "${PURPLE}💡 提示：首次使用建议选择 1 安装${RESET}"
 echo ""
 
-read -p "选择: " opt
+read -p "👉 请输入选项: " opt
 
 
 # ==============================
-# 工具函数
+# 工具函数（优化版）
 # ==============================
 gen_uuid() {
     cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen
 }
 
 gen_path() {
-    echo "/$(tr -dc a-z0-9 </dev/urandom | head -c 10)"
+    local p
+    p=$(tr -dc a-z0-9 </dev/urandom | head -c 10)
+    echo "/$p"
 }
 
 gen_link() {
-    echo "vless://$1@$2:$3?encryption=none&security=tls&type=ws&host=$2&path=$4&sni=$2#$2"
+    local uuid="$1"
+    local domain="$2"
+    local path="$3"
+    echo "vless://${uuid}@${domain}:443?encryption=none&security=tls&type=ws&host=${domain}&path=${path}&sni=${domain}#${domain}"
 }
 
 backup_conf() {
@@ -62,54 +86,6 @@ check_service() {
 
 
 # ==============================
-# ⭐ 稳定配置生成（重点）
-# ==============================
-build_config() {
-cat > "$CONF" <<EOF
-{
-  "log": {
-    "level": "warn",
-    "timestamp": false
-  },
-
-  "inbounds": [
-    {
-      "type": "vless",
-      "listen": "0.0.0.0",
-      "listen_port": $PORT,
-
-      "users": [
-        {
-          "uuid": "$UUID"
-        }
-      ],
-
-      "transport": {
-        "type": "ws",
-        "path": "$PATH_WS"
-      },
-
-      "tls": {
-        "enabled": true,
-        "server_name": "$DOMAIN",
-        "alpn": ["http/1.1"],
-        "certificate_path": "$CERT_DIR/fullchain.pem",
-        "key_path": "$CERT_DIR/privkey.pem"
-      }
-    }
-  ],
-
-  "outbounds": [
-    {
-      "type": "direct"
-    }
-  ]
-}
-EOF
-}
-
-
-# ==============================
 # 安装
 # ==============================
 install() {
@@ -117,64 +93,83 @@ install() {
     echo "📦 安装 sing-box ..."
     bash <(curl -Ls https://sing-box.app/deb-install.sh)
 
-    command -v sing-box >/dev/null 2>&1 || { echo "❌ 安装失败"; exit 1; }
+    if ! command -v sing-box >/dev/null 2>&1; then
+        echo "❌ 安装失败"
+        exit 1
+    fi
 
     read -p "🌐 输入域名: " DOMAIN
-    read -p "🔌 端口(默认443): " PORT
-    PORT=${PORT:-443}
 
     UUID=$(gen_uuid)
+
     PATH_WS=$(gen_path)
+    PATH_WS="${PATH_WS#/}"
 
-    echo "📌 粘贴 fullchain.pem:"
+    # 证书防呆
+    [[ -s "$CERT_DIR/fullchain.pem" ]] && echo "⚠️ 检测到旧证书，将覆盖"
+
+    echo "📌 粘贴 fullchain.pem (CTRL+D 结束):"
     cat > "$CERT_DIR/fullchain.pem"
+    [[ ! -s "$CERT_DIR/fullchain.pem" ]] && { echo "❌ 证书为空"; exit 1; }
 
-    echo "📌 粘贴 privkey.pem:"
+    echo "📌 粘贴 privkey.pem (CTRL+D 结束):"
     cat > "$CERT_DIR/privkey.pem"
+    [[ ! -s "$CERT_DIR/privkey.pem" ]] && { echo "❌ 私钥为空"; exit 1; }
 
     backup_conf
-    build_config
+
+    cat > "$CONF" <<EOF
+{
+  "log": { "level": "warn" },
+  "inbounds": [{
+    "type": "vless",
+    "listen": "0.0.0.0",
+    "listen_port": 443,
+    "users": [{ "uuid": "$UUID" }],
+    "transport": {
+      "type": "ws",
+      "path": "/$PATH_WS",
+      "max_early_data": 2048
+    },
+    "tls": {
+      "enabled": true,
+      "server_name": "$DOMAIN",
+      "certificate_path": "$CERT_DIR/fullchain.pem",
+      "key_path": "$CERT_DIR/privkey.pem"
+    }
+  }],
+  "outbounds": [{ "type": "direct" }]
+}
+EOF
 
     systemctl enable sing-box >/dev/null 2>&1
     systemctl restart sing-box
 
-    check_service || { echo "❌ 启动失败"; exit 1; }
+    if ! check_service; then
+        echo "❌ 服务启动失败，请检查配置"
+        exit 1
+    fi
 
-    echo "================================"
+    echo "======================================="
     echo "🎉 安装完成"
     echo "DOMAIN: $DOMAIN"
-    echo "PORT: $PORT"
     echo "UUID: $UUID"
-    echo "PATH: $PATH_WS"
-    echo "================================"
+    echo "PATH: /$PATH_WS"
+    echo "======================================="
 
-    gen_link "$UUID" "$DOMAIN" "$PORT" "$PATH_WS"
+    gen_link "$UUID" "$DOMAIN" "/$PATH_WS"
 }
 
 
 # ==============================
-# 查看（带链接）
+# 查看
 # ==============================
 show() {
-
-    echo "📄 配置内容："
-    cat "$CONF" 2>/dev/null || echo "无配置"
-
+    echo "📄 当前配置："
+    echo "--------------------------------"
+    [[ -f "$CONF" ]] && cat "$CONF" || echo "配置不存在"
     echo ""
     systemctl status sing-box --no-pager || true
-
-    if [[ -f "$CONF" ]]; then
-        DOMAIN=$(grep '"server_name"' "$CONF" | cut -d'"' -f4)
-        PORT=$(grep '"listen_port"' "$CONF" | grep -o '[0-9]\+')
-        UUID=$(grep -o '"uuid"[[:space:]]*:[[:space:]]*"[^"]*"' "$CONF" | cut -d'"' -f4)
-        PATH_WS=$(grep '"path"' "$CONF" | cut -d'"' -f4)
-
-        echo ""
-        echo "🔗 VLESS链接："
-        echo "--------------------------------"
-        echo "vless://${UUID}@${DOMAIN}:${PORT}?encryption=none&security=tls&type=ws&host=${DOMAIN}&path=${PATH_WS}&sni=${DOMAIN}#${DOMAIN}"
-        echo "--------------------------------"
-    fi
 }
 
 
@@ -183,11 +178,10 @@ show() {
 # ==============================
 modify() {
 
-    read -p "🌐 新域名: " DOMAIN
-    read -p "🔌 端口(默认443): " PORT
-    PORT=${PORT:-443}
+    echo "⚙️ 修改配置"
 
-    read -p "重新生成UUID?(y/n): " r
+    read -p "🌐 新域名: " DOMAIN
+    read -p "🔁 是否重新生成 UUID? (y/n): " r
 
     if [[ "$r" == "y" ]]; then
         UUID=$(gen_uuid)
@@ -197,23 +191,48 @@ modify() {
     fi
 
     PATH_WS=$(gen_path)
+    PATH_WS="${PATH_WS#/}"
 
     backup_conf
-    build_config
+
+    cat > "$CONF" <<EOF
+{
+  "log": { "level": "warn" },
+  "inbounds": [{
+    "type": "vless",
+    "listen": "0.0.0.0",
+    "listen_port": 443,
+    "users": [{ "uuid": "$UUID" }],
+    "transport": {
+      "type": "ws",
+      "path": "/$PATH_WS",
+      "max_early_data": 2048
+    },
+    "tls": {
+      "enabled": true,
+      "server_name": "$DOMAIN",
+      "certificate_path": "$CERT_DIR/fullchain.pem",
+      "key_path": "$CERT_DIR/privkey.pem"
+    }
+  }],
+  "outbounds": [{ "type": "direct" }]
+}
+EOF
 
     systemctl restart sing-box
 
     echo "✔ 修改完成"
-    gen_link "$UUID" "$DOMAIN" "$PORT" "$PATH_WS"
+    echo "NEW LINK:"
+    gen_link "$UUID" "$DOMAIN" "/$PATH_WS"
 }
 
 
 # ==============================
-# 卸载
+# 卸载（安全版）
 # ==============================
 uninstall() {
 
-    read -p "确认卸载?(y/n): " c
+    read -p "⚠️ 确认卸载 sing-box? (y/n): " c
     [[ "$c" != "y" ]] && return
 
     systemctl stop sing-box || true
@@ -221,7 +240,11 @@ uninstall() {
 
     rm -rf "$CONF" "$CERT_DIR" "$BACKUP_DIR"
 
-    echo "🗑️ 已卸载"
+    if command -v sing-box >/dev/null 2>&1; then
+        rm -f "$(command -v sing-box)"
+    fi
+
+    echo "🗑️ 已卸载完成"
 }
 
 
@@ -230,7 +253,7 @@ uninstall() {
 # ==============================
 restart() {
     systemctl restart sing-box
-    check_service && echo "✔ OK" || echo "❌ FAIL"
+    check_service && echo "✔ 已重启成功" || echo "❌ 重启失败"
 }
 
 
@@ -239,12 +262,16 @@ restart() {
 # ==============================
 case $opt in
     1)
-        is_installed && echo "已安装" || install
+        if is_installed; then
+            echo "❌ 已安装，请勿重复安装"
+        else
+            install
+        fi
     ;;
     2) show ;;
     3) modify ;;
     4) uninstall ;;
     5) restart ;;
     0) exit 0 ;;
-    *) echo "错误选项" ;;
+    *) echo "无效选项" ;;
 esac
