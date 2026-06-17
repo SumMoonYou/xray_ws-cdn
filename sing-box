@@ -16,37 +16,25 @@ fi
 
 mkdir -p "$CERT_DIR" "$BACKUP_DIR"
 
-# ==============================
-# UI菜单
-# ==============================
 clear
 
-GREEN="\033[32m"
-BLUE="\033[36m"
-YELLOW="\033[33m"
-PURPLE="\033[35m"
-RESET="\033[0m"
-
-echo -e "${BLUE}"
-echo "┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓"
-echo "┃        🚀 Sing-box 管理面板         ┃"
-echo "┃     WS + TLS + VLESS + CF MODE      ┃"
-echo "┗━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┛"
-echo -e "${RESET}"
-
-echo -e "${GREEN}📌 功能菜单：${RESET}"
-echo "1) 安装 sing-box"
+echo "======================================="
+echo "🚀 Sing-box 管理脚本（稳定增强版）"
+echo "WS + TLS + VLESS"
+echo "======================================="
+echo "1) 安装"
 echo "2) 查看配置"
 echo "3) 修改配置"
 echo "4) 卸载"
 echo "5) 重启"
 echo "0) 退出"
+echo ""
 
-read -p "👉 选择: " opt
+read -p "选择: " opt
 
 
 # ==============================
-# 工具函数（性能版）
+# 工具函数
 # ==============================
 gen_uuid() {
     cat /proc/sys/kernel/random/uuid 2>/dev/null || uuidgen
@@ -57,12 +45,7 @@ gen_path() {
 }
 
 gen_link() {
-    local uuid="$1"
-    local domain="$2"
-    local port="$3"
-    local path="$4"
-
-    echo "vless://${uuid}@${domain}:${port}?encryption=none&security=tls&type=ws&host=${domain}&path=${path}&sni=${domain}#${domain}"
+    echo "vless://$1@$2:$3?encryption=none&security=tls&type=ws&host=$2&path=$4&sni=$2#$2"
 }
 
 backup_conf() {
@@ -79,7 +62,7 @@ check_service() {
 
 
 # ==============================
-# 🔥 性能优化配置生成
+# ⭐ 稳定配置生成（重点）
 # ==============================
 build_config() {
 cat > "$CONF" <<EOF
@@ -89,62 +72,38 @@ cat > "$CONF" <<EOF
     "timestamp": false
   },
 
-  "dns": {
-    "strategy": "ipv4_only",
-    "independent_cache": true
-  },
+  "inbounds": [
+    {
+      "type": "vless",
+      "listen": "0.0.0.0",
+      "listen_port": $PORT,
 
-  "inbounds": [{
-    "type": "vless",
-    "listen": "0.0.0.0",
-    "listen_port": $PORT,
+      "users": [
+        {
+          "uuid": "$UUID"
+        }
+      ],
 
-    "users": [{
-      "uuid": "$UUID",
-      "flow": ""
-    }],
+      "transport": {
+        "type": "ws",
+        "path": "$PATH_WS"
+      },
 
-    "transport": {
-      "type": "ws",
-      "path": "$PATH_WS",
-      "max_early_data": 2048,
-      "early_data_header_name": "Sec-WebSocket-Protocol"
-    },
-
-    "multiplex": {
-      "enabled": true,
-      "padding": true,
-      "brutal": {
+      "tls": {
         "enabled": true,
-        "up_mbps": 100,
-        "down_mbps": 200
+        "server_name": "$DOMAIN",
+        "alpn": ["http/1.1"],
+        "certificate_path": "$CERT_DIR/fullchain.pem",
+        "key_path": "$CERT_DIR/privkey.pem"
       }
-    },
-
-    "tls": {
-      "enabled": true,
-      "server_name": "$DOMAIN",
-      "alpn": ["h2", "http/1.1"],
-      "min_version": "1.2",
-      "max_version": "1.3",
-      "certificate_path": "$CERT_DIR/fullchain.pem",
-      "key_path": "$CERT_DIR/privkey.pem"
     }
-  }],
+  ],
 
-  "outbounds": [{
-    "type": "direct"
-  }],
-
-  "route": {
-    "final": "direct"
-  },
-
-  "experimental": {
-    "cache_file": {
-      "enabled": true
+  "outbounds": [
+    {
+      "type": "direct"
     }
-  }
+  ]
 }
 EOF
 }
@@ -161,7 +120,7 @@ install() {
     command -v sing-box >/dev/null 2>&1 || { echo "❌ 安装失败"; exit 1; }
 
     read -p "🌐 输入域名: " DOMAIN
-    read -p "🔌 输入端口(默认443): " PORT
+    read -p "🔌 端口(默认443): " PORT
     PORT=${PORT:-443}
 
     UUID=$(gen_uuid)
@@ -169,11 +128,9 @@ install() {
 
     echo "📌 粘贴 fullchain.pem:"
     cat > "$CERT_DIR/fullchain.pem"
-    [[ ! -s "$CERT_DIR/fullchain.pem" ]] && { echo "❌ 证书为空"; exit 1; }
 
     echo "📌 粘贴 privkey.pem:"
     cat > "$CERT_DIR/privkey.pem"
-    [[ ! -s "$CERT_DIR/privkey.pem" ]] && { echo "❌ 私钥为空"; exit 1; }
 
     backup_conf
     build_config
@@ -183,13 +140,13 @@ install() {
 
     check_service || { echo "❌ 启动失败"; exit 1; }
 
-    echo "=============================="
+    echo "================================"
     echo "🎉 安装完成"
     echo "DOMAIN: $DOMAIN"
     echo "PORT: $PORT"
     echo "UUID: $UUID"
     echo "PATH: $PATH_WS"
-    echo "=============================="
+    echo "================================"
 
     gen_link "$UUID" "$DOMAIN" "$PORT" "$PATH_WS"
 }
@@ -200,17 +157,17 @@ install() {
 # ==============================
 show() {
 
-    echo "📄 配置："
+    echo "📄 配置内容："
     cat "$CONF" 2>/dev/null || echo "无配置"
 
     echo ""
     systemctl status sing-box --no-pager || true
 
     if [[ -f "$CONF" ]]; then
-        DOMAIN=$(grep '"server_name"' "$CONF" | head -n1 | cut -d'"' -f4)
-        PORT=$(grep '"listen_port"' "$CONF" | head -n1 | grep -o '[0-9]\+')
+        DOMAIN=$(grep '"server_name"' "$CONF" | cut -d'"' -f4)
+        PORT=$(grep '"listen_port"' "$CONF" | grep -o '[0-9]\+')
         UUID=$(grep -o '"uuid"[[:space:]]*:[[:space:]]*"[^"]*"' "$CONF" | cut -d'"' -f4)
-        PATH_WS=$(grep '"path"' "$CONF" | head -n1 | cut -d'"' -f4)
+        PATH_WS=$(grep '"path"' "$CONF" | cut -d'"' -f4)
 
         echo ""
         echo "🔗 VLESS链接："
@@ -230,7 +187,7 @@ modify() {
     read -p "🔌 端口(默认443): " PORT
     PORT=${PORT:-443}
 
-    read -p "🔁 重新UUID(y/n): " r
+    read -p "重新生成UUID?(y/n): " r
 
     if [[ "$r" == "y" ]]; then
         UUID=$(gen_uuid)
@@ -256,7 +213,7 @@ modify() {
 # ==============================
 uninstall() {
 
-    read -p "确认卸载? (y/n): " c
+    read -p "确认卸载?(y/n): " c
     [[ "$c" != "y" ]] && return
 
     systemctl stop sing-box || true
@@ -278,7 +235,7 @@ restart() {
 
 
 # ==============================
-# 执行
+# 菜单执行
 # ==============================
 case $opt in
     1)
