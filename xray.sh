@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # ======================================================
-# 🚀 Xray 面板（兼容增强版）
+# 🚀 Xray 面板
 # ======================================================
 
 CONF="/etc/xray/config.json"
@@ -82,7 +82,7 @@ EOF
 echo -e "${RESET}"
 
 echo -e "${GREEN}========================================${RESET}"
-echo -e "${GREEN}   VLESS + WS + TLS（增强兼容版）${RESET}"
+echo -e "${GREEN}   VLESS + WS + TLS${RESET}"
 echo -e "${GREEN}========================================${RESET}"
 
 echo ""
